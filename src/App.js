@@ -1,4 +1,4 @@
-{ useState } from "react";
+import { useState, useEffect } from "react";
 
 const SYSTEM_PROMPT = `あなたは詐欺商材を判定する専門AIです。
 ユーザーが入力した商材・サービス・勧誘文句を分析し、以下のJSON形式のみで返答してください。
@@ -15,27 +15,6 @@ const SYSTEM_PROMPT = `あなたは詐欺商材を判定する専門AIです。
   "advice": "ユーザーへのアドバイスを100字程度で"
 }
 
-判定基準：
-【金銭系】
-- 「絶対儲かる」「リスクゼロ」などの利益保証
-- 具体的な高額収入の提示（月収100万円など）
-- 高額な初期費用・情報商材
-
-【勧誘系】
-- MLM・ネットワークビジネスの構造
-- 「紹介するだけ」「友達に広めるだけ」
-- 「今だけ限定」「残り3席」の焦らせ手法
-
-【信頼偽装系】
-- 著名人・有名企業の名前を無断使用
-- 偽の実績・口コミ・メディア掲載
-- 根拠のない受賞歴
-
-【逃げ道系】
-- 返金保証があるが条件不明
-- 運営者情報が不透明
-- 特定商取引法の記載なし
-
 レベル定義：
 1（0-20点）: 安心 → AIがビックリして画面から飛び出すレベル
 2（21-40点）: やや注意 → AIが様子見するレベル
@@ -43,19 +22,51 @@ const SYSTEM_PROMPT = `あなたは詐欺商材を判定する専門AIです。
 4（61-80点）: 危険 → AIがターミネーターになるレベル
 5（81-100点）: 詐欺の疑い強 → AIが火星に移動するレベル`;
 
-const LEVEL_STYLE = {
-  1: { bg: "#f0fdf4", border: "#22c55e", color: "#15803d", emoji: "😲" },
-  2: { bg: "#fefce8", border: "#eab308", color: "#854d0e", emoji: "👀" },
-  3: { bg: "#fff7ed", border: "#f97316", color: "#9a3412", emoji: "💥" },
-  4: { bg: "#fef2f2", border: "#ef4444", color: "#991b1b", emoji: "🤖" },
-  5: { bg: "#1a0000", border: "#7f1d1d", color: "#fca5a5", emoji: "🚀" },
+const LEVEL_CONFIG = {
+  1: { color: "#00ff88", glow: "#00ff8844", emoji: "😲", label: "SAFE", scanColor: "#00ff88" },
+  2: { color: "#ffe500", glow: "#ffe50044", emoji: "👀", label: "CAUTION", scanColor: "#ffe500" },
+  3: { color: "#ff8c00", glow: "#ff8c0044", emoji: "💥", label: "WARNING", scanColor: "#ff8c00" },
+  4: { color: "#ff2d2d", glow: "#ff2d2d44", emoji: "🤖", label: "DANGER", scanColor: "#ff2d2d" },
+  5: { color: "#ff00ff", glow: "#ff00ff44", emoji: "🚀", label: "FRAUD", scanColor: "#ff00ff" },
 };
+
+function GlitchText({ text, color }) {
+  return (
+    <span style={{
+      color, fontFamily: "'Courier New', monospace",
+      textShadow: `0 0 10px ${color}, 0 0 20px ${color}, 2px 2px 0 #ff000044`,
+      letterSpacing: 4,
+    }}>{text}</span>
+  );
+}
+
+function ScanLine() {
+  return (
+    <div style={{
+      position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+      background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px)",
+      pointerEvents: "none", borderRadius: 12,
+    }} />
+  );
+}
 
 export default function App() {
   const [input, setInput] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [scanY, setScanY] = useState(0);
+  const [blink, setBlink] = useState(true);
+
+  useEffect(() => {
+    const t = setInterval(() => setScanY(y => (y + 2) % 100), 20);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => setBlink(b => !b), 600);
+    return () => clearInterval(t);
+  }, []);
 
   const analyze = async () => {
     if (!input.trim() || loading) return;
@@ -81,17 +92,10 @@ export default function App() {
       });
 
       const data = await response.json();
-
-      if (data.error) {
-        setError("APIエラー: " + data.error.message);
-        return;
-      }
-
+      if (data.error) { setError("APIエラー: " + data.error.message); return; }
       const text = data.content?.[0]?.text || "";
       const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      setResult(parsed);
-
+      setResult(JSON.parse(clean));
     } catch (e) {
       setError("エラー: " + (e?.message || "不明"));
     } finally {
@@ -99,117 +103,229 @@ export default function App() {
     }
   };
 
-  const style = result ? LEVEL_STYLE[result.level] || LEVEL_STYLE[3] : null;
+  const cfg = result ? LEVEL_CONFIG[result.level] || LEVEL_CONFIG[3] : null;
 
   return (
-    <div style={{ maxWidth: 600, margin: "40px auto", padding: "0 20px", fontFamily: "sans-serif" }}>
-      <h1 style={{ fontSize: 22, fontWeight: "bold", marginBottom: 4 }}>🔍 詐欺商材判定ツール</h1>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
-        商材・勧誘文句・サービス内容を貼り付けてください
-      </p>
+    <div style={{
+      minHeight: "100vh", background: "#050508",
+      backgroundImage: "radial-gradient(ellipse at 50% 0%, #0a0a1a 0%, #050508 70%)",
+      padding: "24px 16px", fontFamily: "'Courier New', monospace",
+    }}>
+      <style>{`
+        @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.8} 95%{opacity:1} 97%{opacity:0.9} }
+        @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes scanMove { from{top:0%} to{top:100%} }
+        .result-card { animation: fadeIn 0.5s ease forwards; }
+        .danger-shake { animation: shake 0.3s ease infinite; }
+      `}</style>
 
-      {error && (
-        <div style={{ background: "#fee2e2", color: "#b91c1c", padding: "10px 14px", borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
-          ⚠️ {error}
-        </div>
-      )}
+      <div style={{ maxWidth: 560, margin: "0 auto" }}>
 
-      <textarea
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="例：月収100万円保証！初期費用0円で始められる副業。今だけ限定募集中..."
-        style={{
-          width: "100%", height: 130, padding: 12, fontSize: 14,
-          border: "1px solid #ddd", borderRadius: 8, resize: "vertical",
-          boxSizing: "border-box", marginBottom: 12
-        }}
-      />
-
-      <button
-        onClick={analyze}
-        disabled={loading || !input.trim()}
-        style={{
-          width: "100%", padding: "12px 0", fontSize: 15, fontWeight: "bold",
-          background: loading ? "#aaa" : "#1d4ed8", color: "white",
-          border: "none", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
-          marginBottom: 24
-        }}
-      >
-        {loading ? "🔄 分析中..." : "判定する"}
-      </button>
-
-      {result && style && (
-        <div style={{
-          border: `2px solid ${style.border}`,
-          borderRadius: 12, overflow: "hidden"
-        }}>
-          {/* ヘッダー */}
-          <div style={{ background: style.border, padding: "16px 20px", textAlign: "center" }}>
-            <div style={{ fontSize: 48 }}>{style.emoji}</div>
-            <div style={{ color: "white", fontWeight: "bold", fontSize: 20, marginTop: 4 }}>
-              {result.verdict}
-            </div>
-            <div style={{ color: "white", fontSize: 12, opacity: 0.9, marginTop: 2 }}>
-              {result.character}
-            </div>
+        {/* ヘッダー */}
+        <div style={{ textAlign: "center", marginBottom: 32, animation: "flicker 4s infinite" }}>
+          <div style={{ fontSize: 11, color: "#ff2d2d", letterSpacing: 6, marginBottom: 8 }}>
+            ▸ SYSTEM ACTIVE ◂
           </div>
+          <h1 style={{
+            fontSize: 22, fontWeight: 900, margin: 0,
+            color: "#fff", letterSpacing: 3,
+            textShadow: "0 0 20px #ff2d2d, 0 0 40px #ff2d2d66"
+          }}>
+            🔍 詐欺商材<span style={{ color: "#ff2d2d" }}>判定</span>システム
+          </h1>
+          <div style={{ fontSize: 10, color: "#444", letterSpacing: 4, marginTop: 6 }}>
+            FRAUD DETECTION AI v2.0
+          </div>
+        </div>
 
-          {/* スコア */}
-          <div style={{ background: style.bg, padding: "16px 20px" }}>
-            <div style={{ textAlign: "center", marginBottom: 16 }}>
-              <span style={{ fontSize: 48, fontWeight: "bold", color: style.color }}>
-                {result.score}
-              </span>
-              <span style={{ fontSize: 14, color: style.color }}> / 100</span>
-              <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>危険度スコア</div>
+        {/* エラー */}
+        {error && (
+          <div style={{
+            background: "#1a0000", border: "1px solid #ff2d2d",
+            borderRadius: 8, padding: "12px 16px", marginBottom: 16,
+            color: "#ff6666", fontSize: 13,
+            boxShadow: "0 0 20px #ff2d2d44"
+          }}>⚠ {error}</div>
+        )}
 
-              {/* スコアバー */}
-              <div style={{ background: "#e5e7eb", borderRadius: 99, height: 10, marginTop: 10 }}>
+        {/* 入力エリア */}
+        <div style={{ position: "relative", marginBottom: 12 }}>
+          <div style={{
+            position: "absolute", top: -10, left: 12,
+            background: "#050508", padding: "0 8px",
+            color: "#ff2d2d", fontSize: 10, letterSpacing: 3
+          }}>INPUT_TARGET</div>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="商材・勧誘文句・サービス内容を貼り付けてください..."
+            style={{
+              width: "100%", height: 140, padding: "20px 14px 14px",
+              background: "#0a0a0f", color: "#aaffcc",
+              border: "1px solid #1a3a2a", borderRadius: 8,
+              fontSize: 13, resize: "vertical", boxSizing: "border-box",
+              outline: "none", lineHeight: 1.7,
+              boxShadow: "inset 0 0 30px #00ff0808",
+            }}
+          />
+          <ScanLine />
+        </div>
+
+        {/* ボタン */}
+        <button
+          onClick={analyze}
+          disabled={loading || !input.trim()}
+          style={{
+            width: "100%", padding: "14px 0",
+            background: loading ? "#1a1a1a" : "linear-gradient(135deg, #ff2d2d, #aa0000)",
+            color: loading ? "#444" : "#fff",
+            border: loading ? "1px solid #333" : "1px solid #ff2d2d",
+            borderRadius: 8, fontSize: 14, fontWeight: "bold",
+            letterSpacing: 4, cursor: loading ? "not-allowed" : "pointer",
+            boxShadow: loading ? "none" : "0 0 20px #ff2d2d66, inset 0 1px 0 #ff666644",
+            marginBottom: 32, fontFamily: "'Courier New', monospace",
+            animation: loading ? "none" : "pulse 2s infinite",
+          }}
+        >
+          {loading ? "[ ANALYZING... ]" : "[ 判定開始 ]"}
+        </button>
+
+        {/* 結果 */}
+        {result && cfg && (
+          <div className={`result-card ${result.level >= 4 ? "danger-shake" : ""}`}
+            style={{
+              background: "#08080f",
+              border: `1px solid ${cfg.color}`,
+              borderRadius: 12, overflow: "hidden",
+              boxShadow: `0 0 40px ${cfg.glow}, 0 0 80px ${cfg.glow}`,
+              position: "relative",
+            }}>
+            <ScanLine />
+
+            {/* 警告ヘッダー */}
+            <div style={{
+              background: `linear-gradient(135deg, ${cfg.color}22, ${cfg.color}11)`,
+              borderBottom: `1px solid ${cfg.color}44`,
+              padding: "20px 20px 16px", textAlign: "center",
+              position: "relative",
+            }}>
+              <div style={{ fontSize: 11, color: cfg.color, letterSpacing: 6, marginBottom: 8 }}>
+                {blink ? "▸ SCAN COMPLETE ◂" : "              "}
+              </div>
+              <div style={{ fontSize: 52 }}>{cfg.emoji}</div>
+              <div style={{
+                fontSize: 28, fontWeight: 900, marginTop: 8, letterSpacing: 4,
+                color: cfg.color,
+                textShadow: `0 0 20px ${cfg.color}, 0 0 40px ${cfg.color}`,
+              }}>
+                {cfg.label}
+              </div>
+              <div style={{ color: "#ccc", fontSize: 14, marginTop: 4, letterSpacing: 2 }}>
+                {result.verdict}
+              </div>
+              <div style={{ color: "#888", fontSize: 11, marginTop: 4 }}>
+                {result.character}
+              </div>
+            </div>
+
+            {/* スコアバー */}
+            <div style={{ padding: "16px 20px", borderBottom: `1px solid #1a1a2a` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ color: "#555", fontSize: 10, letterSpacing: 3 }}>DANGER_LEVEL</span>
+                <span style={{ color: cfg.color, fontSize: 20, fontWeight: 900 }}>
+                  {result.score}<span style={{ fontSize: 12, color: "#555" }}>/100</span>
+                </span>
+              </div>
+              <div style={{ background: "#111", borderRadius: 99, height: 8, overflow: "hidden" }}>
                 <div style={{
                   width: `${result.score}%`, height: "100%",
-                  background: style.border, borderRadius: 99,
-                  transition: "width 0.5s"
+                  background: `linear-gradient(90deg, ${cfg.color}88, ${cfg.color})`,
+                  boxShadow: `0 0 10px ${cfg.color}`,
+                  borderRadius: 99, transition: "width 1s ease",
                 }} />
               </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                {[1,2,3,4,5].map(l => (
+                  <div key={l} style={{
+                    width: 28, height: 4, borderRadius: 2,
+                    background: result.level >= l ? LEVEL_CONFIG[l].color : "#1a1a2a",
+                    boxShadow: result.level >= l ? `0 0 6px ${LEVEL_CONFIG[l].color}` : "none",
+                  }} />
+                ))}
+              </div>
             </div>
 
-            {/* 説明 */}
-            <p style={{ fontSize: 14, lineHeight: 1.7, color: "#333", marginBottom: 16 }}>
-              {result.explanation}
-            </p>
-
-            {/* 危険ポイント */}
-            {result.redFlags?.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <strong style={{ color: "#ef4444", fontSize: 13 }}>⚠️ 危険なポイント</strong>
-                <ul style={{ marginTop: 6, paddingLeft: 18 }}>
-                  {result.redFlags.map((f, i) => (
-                    <li key={i} style={{ fontSize: 13, marginBottom: 4, color: "#333" }}>{f}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* 安全ポイント */}
-            {result.safePoints?.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <strong style={{ color: "#22c55e", fontSize: 13 }}>✅ 安全なポイント</strong>
-                <ul style={{ marginTop: 6, paddingLeft: 18 }}>
-                  {result.safePoints.map((f, i) => (
-                    <li key={i} style={{ fontSize: 13, marginBottom: 4, color: "#333" }}>{f}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* アドバイス */}
-            <div style={{ background: "white", borderRadius: 8, padding: 12, border: "1px solid #e5e7eb" }}>
-              <strong style={{ fontSize: 13 }}>💡 アドバイス</strong>
-              <p style={{ fontSize: 13, marginTop: 6, marginBottom: 0, lineHeight: 1.6, color: "#333" }}>
-                {result.advice}
+            {/* 詳細 */}
+            <div style={{ padding: "16px 20px" }}>
+              <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.8, marginBottom: 16 }}>
+                {result.explanation}
               </p>
+
+              {result.redFlags?.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ color: "#ff4444", fontSize: 10, letterSpacing: 4, marginBottom: 8 }}>
+                    ▸ RED_FLAGS
+                  </div>
+                  {result.redFlags.map((f, i) => (
+                    <div key={i} style={{
+                      display: "flex", gap: 8, marginBottom: 6,
+                      color: "#ff8888", fontSize: 13, lineHeight: 1.5,
+                    }}>
+                      <span style={{ color: "#ff4444", flexShrink: 0 }}>✗</span>
+                      <span>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {result.safePoints?.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ color: "#00ff88", fontSize: 10, letterSpacing: 4, marginBottom: 8 }}>
+                    ▸ SAFE_POINTS
+                  </div>
+                  {result.safePoints.map((f, i) => (
+                    <div key={i} style={{
+                      display: "flex", gap: 8, marginBottom: 6,
+                      color: "#88ffbb", fontSize: 13, lineHeight: 1.5,
+                    }}>
+                      <span style={{ color: "#00ff88", flexShrink: 0 }}>✓</span>
+                      <span>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{
+                background: "#0a0a15", border: "1px solid #1a1a3a",
+                borderRadius: 8, padding: 14, marginTop: 8,
+              }}>
+                <div style={{ color: "#4488ff", fontSize: 10, letterSpacing: 4, marginBottom: 8 }}>
+                  ▸ ADVICE
+                </div>
+                <p style={{ color: "#88aaff", fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+                  {result.advice}
+                </p>
+              </div>
+
+              {/* SNSシェア用フッター */}
+              <div style={{
+                marginTop: 16, paddingTop: 12,
+                borderTop: "1px solid #1a1a2a",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}>
+                <span style={{ color: "#333", fontSize: 10, letterSpacing: 2 }}>
+                  FRAUD DETECTION AI
+                </span>
+                <span style={{ color: cfg.color, fontSize: 10, letterSpacing: 2 }}>
+                  LEVEL {result.level} / 5
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
+  );
+}
