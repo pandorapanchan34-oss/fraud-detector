@@ -32,8 +32,10 @@ export default function Chat() {
       const data = await response.json();
       const reply = data.content?.[0]?.text || "エラーが発生しました";
       setMessages([...newMessages, { role: "assistant", content: reply }]);
-    } catch (e) {
-      setMessages([...newMessages, { role: "assistant", content: "エラーが発生しました" }]);
+     } catch (e) {
+  const errMsg = e?.message || JSON.stringify(e) || "不明なエラー";
+  setMessages([...newMessages, { role: "assistant", content: "エラー: " + errMsg }]);
+}
     } finally {
       setLoading(false);
     }
