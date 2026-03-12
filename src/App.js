@@ -4,6 +4,7 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const send = async () => {
     if (!input.trim() || loading) return;
@@ -12,6 +13,7 @@ export default function Chat() {
     setMessages(newMessages);
     setInput("");
     setLoading(true);
+    setError("");
 
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -30,12 +32,17 @@ export default function Chat() {
       });
 
       const data = await response.json();
-      const reply = data.content?.[0]?.text || "エラーが発生しました";
+
+      if (data.error) {
+        setError("APIエラー: " + data.error.message);
+        return;
+      }
+
+      const reply = data.content?.[0]?.text || "返答がありませんでした";
       setMessages([...newMessages, { role: "assistant", content: reply }]);
-     } catch (e) {
-  const errMsg = e?.message || JSON.stringify(e) || "不明なエラー";
-  setMessages([...newMessages, { role: "assistant", content: "エラー: " + errMsg }]);
-}
+
+    } catch (e) {
+      setError("通信エラー: " + (e?.message || "不明"));
     } finally {
       setLoading(false);
     }
@@ -44,6 +51,12 @@ export default function Chat() {
   return (
     <div style={{ maxWidth: 600, margin: "40px auto", padding: "0 20px", fontFamily: "sans-serif" }}>
       <h2>チャット</h2>
+
+      {error && (
+        <div style={{ background: "#fee2e2", color: "#b91c1c", padding: "10px 14px", borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       <div style={{ border: "1px solid #ddd", borderRadius: 8, height: 400, overflowY: "auto", padding: 16, marginBottom: 12 }}>
         {messages.length === 0 && <p style={{ color: "#aaa" }}>メッセージを送ってみよう</p>}
